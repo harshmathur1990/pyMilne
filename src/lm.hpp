@@ -17,7 +17,79 @@
 #include "Milne.hpp"
 
 namespace lm{
+  
+  // -- Simple Gaussian elimination implemented in the header file as template for inlining in the code --- //
+  
+  template<typename T>
+  inline void SolveLinearGauss(Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>  &A,
+			       Eigen::Matrix<T,Eigen::Dynamic,1> &B)
+  {
+    
+    
+    // --- Simple Gaussian elimination with partial pivoting --- //
+    
+    // A is the matrix with coeffs that multiply X. B is the right hand
+    // term (on input). The result is overwritten into B. All operations
+    // are done in-place
+    
+    // The algorithm is a pretty standard Gauss-Jordan algorithm, here optimized a
+    // bit for performance.
 
+    //Eigen::Matrix<T,Eigen::Dynamic,1> B_copy = B;
+    //Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor> A_copy = A;
+
+    int const N = int(B.size());
+    int maxrow = 0, swapme = 0;
+    
+    
+    for (int i=0; i<N; ++i) {
+      
+      // Find pivot
+      
+      T maxel = std::abs(A(i,i));
+      maxrow = i, swapme = 0;
+      
+      for (int k=i+1; k<N; ++k){
+	T  tmp = std::abs(A(k,i));
+	if(tmp > maxel){
+	  maxel = tmp;
+	  maxrow = k, swapme = 1;
+	}
+      }
+      
+      // swap
+      if(swapme){
+	for (int k=i; k<N;++k)
+	  std::swap(A(maxrow,k),A(i,k));
+	
+	std::swap(B[maxrow],B[i]);
+      }
+      
+      // Set to zero relevant columns
+      
+      T const Aii = -A(i,i);
+      
+      for (int k=i+1; k<N; ++k){
+	T const tmp = A(k,i) / Aii;
+	A(k,i) = T(0);
+	for (int j=i+1; j<N; ++j) {
+	  A(k,j) += tmp * A(i,j);
+	}
+	B[k] += tmp*B[i];
+      }
+    }
+    
+    
+    // Solve upper triagonal system and store in-place in B
+
+    for (int i=N-1; i>=0; --i) {
+      B[i] /= A(i,i);
+      for (int k=i-1;k>=0; --k) {
+	B[k] -= A(k,i) * B[i];
+      }
+    }
+  }
+  
   // ***************************************** //
 
   template<typename T>
@@ -250,9 +322,6 @@ namespace lm{
       using Mat = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
       using Vec = Eigen::Matrix<T, Eigen::Dynamic, 1>;
       
-      using cVecMap = Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1>>;
-      using cMatMap = Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>;
-
 
       // --- Define some quantities --- //
 
@@ -261,7 +330,6 @@ namespace lm{
 
       Mat A(cPar, cPar); A.setZero();
       Vec B(cPar); B.setZero();
-      Vec dm(cPar); dm.setZero();
       
       
       // --- get Hessian matrix --- //
@@ -285,7 +353,7 @@ namespace lm{
 	B[jj] = static_cast<T>(sum); 
 	
 	
-	A(jj,jj) *= 1+iLam;
+	A(jj,jj) *= 1.0+iLam;
       } // jj
 
       
@@ -293,10 +361,13 @@ namespace lm{
       
       //Eigen::BDCSVD<Mat> sy(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
       Eigen::ColPivHouseholderQR<Mat> sy(A); // Also rank revealing but much faster than SVD
-      sy.setThreshold(1.e-14);
+      sy.setThreshold(1.e-9);
       
-      dm = sy.solve(B);
-
+      Vec dm = sy.solve(B);
+      //dm = B;
+      //SolveLinearGauss(A, B);
+      
+      
       
       // --- add to model and check parameters --- //
 
@@ -310,7 +381,9 @@ namespace lm{
     
     // ------------------------------------------------------------------------------ //
     
-    T getStep(container<T> const& myData, T* __restrict__ m, const T* __restrict__ J, T* __restrict__ syn, T* __restrict__ r, T &iLam, bool braket, T const maxLam, T const minLam)const{
+    T getStep(container<T> const& myData, T* __restrict__ m, const T* __restrict__ J,
+	      T* __restrict__ syn, T* __restrict__ r, T &iLam, bool braket, T const maxLam,
+	      T const minLam)const{
 
       // if(!braket){
 	return getCorrection(myData, m, J, syn, r, iLam);

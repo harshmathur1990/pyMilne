@@ -1,10 +1,10 @@
 """
 CYTHON interface for C++ MilneEddington tools.
-Author: J. de la Cruz Rodriguez (ISP-SU, 2020)
+Author: J. de la Cruz Rodriguez (ISP-SU, 2023)
 """
 cimport numpy as np
 from numpy cimport ndarray as ar
-from numpy import zeros, abs, sqrt, arctan2, where, pi, float32, float64
+from numpy import zeros, abs, sqrt, arctan2, where, pi, float32, float64, ndarray
 from libcpp cimport bool
 from libcpp.vector cimport vector
 from libcpp.string cimport string
@@ -17,22 +17,28 @@ __status__="Developing"
 #
 # Expose templates
 #
+
+# ********************************************************************************
+
 cdef extern from "line.hpp" namespace "ln":
     cdef cppclass line[T]:
         line(const T j1, const T j2, const T g1, const T g2, const T  igf, const double lam0, bool anomalous, const T dw)
 ctypedef line[double] lined
 ctypedef line[float] linef
 
-
+# ********************************************************************************
 
 cdef extern from "Milne.hpp" namespace "ml":
     cdef cppclass Region[T]:
         vector[double] wav
         Region(int  nLambda_i, int  idx_i, int  nPSF, T* psf)
+        #Region(Region[T] &in)
+       # Region[T] &operator=(Region[T] &in)
+        
 ctypedef Region[double] Regiond
 ctypedef Region[float] Regionf
 
-
+# ********************************************************************************
 
 cdef extern from "Milne.hpp" namespace "ml":
     cdef cppclass Milne[T]:
@@ -44,40 +50,73 @@ cdef extern from "Milne.hpp" namespace "ml":
 ctypedef Milne[double] Milned
 ctypedef Milne[float] Milnef
 
+# ********************************************************************************
 
+cdef extern from "spatially_coupled_helper.hpp" namespace "spa":
+    cdef cppclass Data[T,U,ind_t]:
+         vector[Milne[T]] me
+         void reset_regions();
+         Data();
+
+ctypedef Data[double,double,long] Data_d
+
+
+# ********************************************************************************
 
 cdef extern from "wrapper_tools.hpp" namespace "wr":
-    cdef void SynManyd "wr::SynMany<double>"(vector[Milne[double]]& ME, const double* m, double* stokes, int ny, int nx, double mu)
-    cdef void SynManyRFd "wr::SynManyRF<double>"(vector[Milne[double]]& ME, const double* m, double* stokes, double* rf, int ny, int nx, double mu)
-    cdef void InvertManyd "wr::InvertMany<double>"(vector[Milne[double]]& ME, double* m, double* stokes, double* obs, double* sig, double* chi2, int ny, int nx, int nDat, int nRandom, int niter, double chi2_thres, double mu, bool verbose)
+    cdef void SynManyd "wr::SynMany<double>"(vector[Milne[double]]& ME, const double* m, double* stokes, long ny, long nx, double mu)
+    cdef void SynManyRFd "wr::SynManyRF<double>"(vector[Milne[double]]& ME, const double* m, double* stokes, double* rf, long ny, long nx, double mu)
+    cdef void InvertManyd "wr::InvertMany<double>"(vector[Milne[double]]& ME, double* m, double* stokes, double* obs, double* sig, double* chi2, long ny, long nx, long nDat, int nRandom, int niter, double chi2_thres, double mu, bool verbose)
 
-    cdef void SynManyf "wr::SynMany<float>"(vector[Milne[float]]& ME, const float* m, float* stokes, int ny, int nx, float mu)
-    cdef void SynManyRFf "wr::SynManyRF<float>"(vector[Milne[float]]& ME, const float* m, float* stokes, float* rf, int ny, int nx, float mu)
-    cdef void InvertManyf "wr::InvertMany<float>"(vector[Milne[float]]& ME, float* m, float* stokes, float* obs, float* sig, float* chi2, int ny, int nx, int nDat, int nRandom, int niter, float chi2_thres, float mu, bool verbose)
+    cdef void SynManyf "wr::SynMany<float>"(vector[Milne[float]]& ME, const float* m, float* stokes, long ny, long nx, float mu)
+    cdef void SynManyRFf "wr::SynManyRF<float>"(vector[Milne[float]]& ME, const float* m, float* stokes, float* rf, long ny, long nx, float mu)
+    cdef void InvertManyf "wr::InvertMany<float>"(vector[Milne[float]]& ME, float* m, float* stokes, float* obs, float* sig, float* chi2, long ny, long nx, long nDat, int nRandom, int niter, float chi2_thres, float mu, bool verbose)
 
     
-    cdef float invert_spatially_regularized_float "wr::invert_spatially_regularized<float>"(int ny, int nx, int  ndat, vector[Milne[float]] &ME,  float*  m, float* obs, float* syn, float*  sig, int method, int nIter, float chi2_thres, float  mu, float iLam,  float*  alphas, int  delay_bracket)
+    cdef float invert_spatially_regularized_float "wr::invert_spatially_regularized<float>"(long nt, long ny, long nx, long  ndat, vector[Milne[float]] &ME,  float*  m, float* obs, float* syn, float*  sig, int method, int nIter, float chi2_thres, float  mu, float iLam,  float*  alphas,  float*  alphas_time, float* betas, int  delay_bracket)
     
-    cdef double invert_spatially_regularized_double "wr::invert_spatially_regularized<double>"(int ny, int nx, int  ndat, vector[Milne[double]] &ME,  double*  m, double* obs, double* syn, double*  sig, int method, int nIter, double chi2_thres, double  mu, double iLam,  double*  alphas, int delay_bracket)
+    cdef double invert_spatially_regularized_double "wr::invert_spatially_regularized<double>"(long nt, long ny, long nx, long  ndat, vector[Milne[double]] &ME,  double*  m, double* obs, double* syn, double*  sig, int method, int nIter, double chi2_thres, double  mu, double iLam,  double*  alphas, double*  alphas_time, double* betas, int delay_bracket)
+
+# ********************************************************************************
+
+cdef extern from "wrapper_tools_spatially_coupled.hpp" namespace "spa":
+     cdef void addRegions(Data_d &dat, long  ny, long  nx, long  w0, long  w1, long  npy, long  npx, const double* const iPSF, double clip_thres, const double* const iwav, const double* const sigma, double* const obs, int nthreads)
+     
+     cdef void InitDataContainer(long  ny, long  nx, long  npar, Data_d &dat, const double* const alpha, \
+		                 vector[Milne[double]] &ME, double mu)
+     
+     cdef void addRegions(Data_d &dat, \
+		          long  ny1, long  nx1, long  w0, long  w1, long  npy, long  npx, const double* const iPSF, \
+                          double  clip_thres, const double* const iwav, \
+		          const double* const sigma, double* const obs, int nthreads);
+
+     cdef double invert_spatially_coupled(double* const im, \
+				          double* const syn, \
+				          int  method, \
+				          int nIter, double chi2_thres, double  mu, double  iLam, \
+				          int  delay_bracket, Data_d &dat);
+
+     cdef void init_nData(Data_d &dat);
+
 #
 # Wrapper cython classes
 #
-    
-#
+
+
 # ******************************************************************************************************
-#
+
 
 
 cdef class pyLines:
 
-    cpdef double j1
-    cpdef double j2
-    cpdef double g1
-    cpdef double g2
-    cpdef double w0
-    cpdef double gf
-    cpdef bool anomalous
-    cpdef double dw
+    cdef double j1
+    cdef double j2
+    cdef double g1
+    cdef double g2
+    cdef double w0
+    cdef double gf
+    cdef bool anomalous
+    cdef double dw
 
     def __cinit__(self, j1=0, j2=0, g1=0, g2=0, gf = 1.0, cw=0.0, bool anomalous = True, double dw = 20):
         self.j1 = <double>j1
@@ -127,14 +166,14 @@ cdef class pyLines:
 
 cdef class pyLinesf:
 
-    cpdef float j1
-    cpdef float j2
-    cpdef float g1
-    cpdef float g2
-    cpdef double w0
-    cpdef float gf
-    cpdef bool anomalous
-    cpdef float dw
+    cdef float j1
+    cdef float j2
+    cdef float g1
+    cdef float g2
+    cdef double w0
+    cdef float gf
+    cdef bool anomalous
+    cdef float dw
     
     
     def __cinit__(self, j1=0, j2=0, g1=0, g2=0, gf = 1.0, cw=0.0, bool anomalous = True, float dw = 20):
@@ -177,6 +216,24 @@ cdef class pyLinesf:
         return self.anomalous
     cpdef getDw(self):
         return self.dw
+    
+#
+# ******************************************************************************************************
+#
+cdef addRegionToClass(Data_d &dat, ar[double,ndim=4] obs, ar[double,ndim=2] psf, ar[double,ndim=2] sigma, \
+                      int woff, vector[double] wav, double clip_threshold = 1.0, int nthreads = 1):
+
+    cdef long ny1 = obs.shape[0]
+    cdef long nx1 = obs.shape[1]
+    cdef long ns = obs.shape[2]
+    cdef long nw = obs.shape[3]
+    cdef long npy = psf.shape[0]
+    cdef long npx = psf.shape[1]
+    
+    addRegions(dat, ny1, nx1, woff, woff+nw-1, npy, npx, <double*>psf.data, \
+               clip_threshold, <double*>&wav[0], <double*>sigma.data, <double*>obs.data, nthreads);
+    
+    return nw
     
 #
 # ******************************************************************************************************
@@ -265,11 +322,11 @@ cdef class pyMilne:
 
     def synthesize(self, ar[double,ndim=3] m, double mu = 1.0):
 
-        cdef int nWav = self.Me[0].get_number_of_wavelength()
+        cdef long nWav = self.Me[0].get_number_of_wavelength()
         
-        cdef int ny   = m.shape[0]
-        cdef int nx   = m.shape[1]
-        cdef int npar = m.shape[2]
+        cdef long ny   = m.shape[0]
+        cdef long nx   = m.shape[1]
+        cdef long npar = m.shape[2]
 
         
         cdef ar[double,ndim=4] Stokes = zeros((ny,nx,4,nWav), dtype='float64', order='c')
@@ -284,11 +341,11 @@ cdef class pyMilne:
     
     def synthesize_RF(self, ar[double,ndim=3] m, double mu = 1.0):
 
-        cdef int nWav = self.Me[0].get_number_of_wavelength()
+        cdef long nWav = self.Me[0].get_number_of_wavelength()
         
-        cdef int ny   = m.shape[0]
-        cdef int nx   = m.shape[1]
-        cdef int npar = m.shape[2]
+        cdef long ny   = m.shape[0]
+        cdef long nx   = m.shape[1]
+        cdef long npar = m.shape[2]
 
         
         cdef ar[double,ndim=4] Stokes = zeros((ny,nx,4,nWav), dtype='float64', order='c')
@@ -307,12 +364,12 @@ cdef class pyMilne:
         #
         # Dimensions
         #
-        cdef int ny = m.shape[0]
-        cdef int nx = m.shape[1]
-        cdef int npar = m.shape[2]
-        cdef int nwav = obs.shape[3]
-        cdef int nwav1= self.Me[0].get_number_of_wavelength()
-        cdef int nDat = nwav*4
+        cdef long ny = m.shape[0]
+        cdef long nx = m.shape[1]
+        cdef long npar = m.shape[2]
+        cdef long nwav = obs.shape[3]
+        cdef long nwav1= self.Me[0].get_number_of_wavelength()
+        cdef long nDat = nwav*4
         
         #
         # Init output arrays 
@@ -350,22 +407,23 @@ cdef class pyMilne:
         return res
 
 
-    def invert_spatially_regularized(self, ar[double,ndim=3] m, ar[double,ndim=4] obs, ar[double,ndim=2] sig, ar[double,ndim=1] alphas, double mu = 1.0, int nRandom  = 1, int nIter = 20, double chi2_thres = 1.0, verbose = True, int method = 0, double iLam = 10, int delay_bracket = 2):
+    def invert_spatially_regularized(self, ar[double,ndim=4] m, ar[double,ndim=5] obs, ar[double,ndim=2] sig, ar[double,ndim=1] alphas, ar[double,ndim=1] alphas_time, ar[double,ndim=1] betas, double mu = 1.0, int nRandom  = 1, int nIter = 20, double chi2_thres = 1.0, verbose = True, int method = 0, double iLam = 10, int delay_bracket = 2):
 
         #
         # Dimensions
         #
-        cdef int ny = m.shape[0]
-        cdef int nx = m.shape[1]
-        cdef int npar = m.shape[2]
-        cdef int nwav = obs.shape[3]
-        cdef int nwav1= self.Me[0].get_number_of_wavelength()
-        cdef int nDat = nwav*4
+        cdef long nt = m.shape[0]
+        cdef long ny = m.shape[1]
+        cdef long nx = m.shape[2]
+        cdef long npar = m.shape[3]
+        cdef long nwav = obs.shape[4]
+        cdef long nwav1= self.Me[0].get_number_of_wavelength()
+        cdef long nDat = nwav*4
         
         #
         # Init output arrays 
         #
-        cdef ar[double,ndim=4] syn  = zeros((ny,nx,4,nwav), dtype='float64', order='c')
+        cdef ar[double,ndim=5] syn  = zeros((nt,ny,nx,4,nwav), dtype='float64', order='c')
         cdef double chi2 = 1.e32
         
         
@@ -380,7 +438,7 @@ cdef class pyMilne:
         #
         # invert pixels
         #                                                              
-        chi2 = invert_spatially_regularized_double(ny, nx, nDat, self.Me,  <double*>m.data, <double*>obs.data, <double*>syn.data, <double*>sig.data, <int>method, <int>nIter, <double>chi2_thres, <double>mu, <double>iLam,  <double*>alphas.data, <int>delay_bracket)
+        chi2 = invert_spatially_regularized_double(nt, ny, nx, nDat, self.Me,  <double*>m.data, <double*>obs.data, <double*>syn.data, <double*>sig.data, <int>method, <int>nIter, <double>chi2_thres, <double>mu, <double>iLam,  <double*>alphas.data,  <double*>alphas_time.data, <double*>betas.data, <int>delay_bracket)
                                                                         
         
         return m, syn, chi2                                                                        
@@ -388,6 +446,65 @@ cdef class pyMilne:
     def get_dtype(self):
         return self.dtype
 
+
+    def invert_Spatially_Coupled(self, ar[double,ndim=3] m, list coupled_regions, \
+                                 ar[double,ndim=1] alphas, double mu = 1.0,  int nIter = 20, \
+                                 double chi2_thres = 1.0,  int method = 0, double iLam = 1.0, \
+                                 int delay_bracket = 2):
+
+        cdef long ny = m.shape[0]
+        cdef long nx = m.shape[1]
+        cdef long npar = m.shape[2]
+        cdef int nthreads = self.Me.size()
+        
+        if(npar != 9):
+            print("[error] pyMilne::invert_spatially_coupled: the model must have 9 parameters, exiting")
+            return None
+
+        
+        # Init C++ data struct for spatially coupled inversions
+
+        cdef Data_d dat
+        InitDataContainer(ny,nx,npar,dat,<double*>&alphas[0],self.Me, mu)
+
+        
+        # add regions to data struct
+
+        cdef int nreg = len(coupled_regions)
+        cdef int ii = 0
+
+        cdef int off = 0
+        cdef double thres = 1.0
+
+        cdef vector[double] wav = self.Me[0].get_wavelength()
+
+        dat.reset_regions()
+
+        for ii in range(nreg):
+            thres = 1.0
+            if(len(coupled_regions[ii]) == 4):
+                thres = float(coupled_regions[ii][3])
+        
+            off += addRegionToClass(dat,coupled_regions[ii][0],coupled_regions[ii][2],coupled_regions[ii][1], off, wav, thres, nthreads)
+
+        
+        # init nData
+        
+        init_nData(dat)
+
+        
+        # call C++ inverter
+        
+        cdef ar[double,ndim=4] syn = zeros((ny, nx, 4, wav.size()), dtype='float64')
+        
+        invert_spatially_coupled(<double*>m.data, \
+				 <double*>syn.data, \
+        			 <int>method, \
+				 <int>nIter, <double>chi2_thres, <double>mu, <double>iLam, \
+        			 <int>delay_bracket, dat);
+
+
+        return m, syn
 #
 # ******************************************************************************************************
 #
@@ -472,9 +589,9 @@ cdef class pyMilne_float:
 
         cdef int nWav = self.Me[0].get_number_of_wavelength()
         
-        cdef int ny   = m.shape[0]
-        cdef int nx   = m.shape[1]
-        cdef int npar = m.shape[2]
+        cdef long ny   = m.shape[0]
+        cdef long nx   = m.shape[1]
+        cdef long npar = m.shape[2]
 
         
         cdef ar[float,ndim=4] Stokes = zeros((ny,nx,4,nWav), dtype='float32', order='c')
@@ -489,11 +606,11 @@ cdef class pyMilne_float:
     
     def synthesize_RF(self, ar[float,ndim=3] m, float mu = 1.0):
 
-        cdef int nWav = self.Me[0].get_number_of_wavelength()
+        cdef long nWav = self.Me[0].get_number_of_wavelength()
         
-        cdef int ny   = m.shape[0]
-        cdef int nx   = m.shape[1]
-        cdef int npar = m.shape[2]
+        cdef long ny   = m.shape[0]
+        cdef long nx   = m.shape[1]
+        cdef long npar = m.shape[2]
 
         
         cdef ar[float,ndim=4] Stokes = zeros((ny,nx,4,nWav), dtype='float32', order='c')
@@ -512,12 +629,12 @@ cdef class pyMilne_float:
         #
         # Dimensions
         #
-        cdef int ny = m.shape[0]
-        cdef int nx = m.shape[1]
-        cdef int npar = m.shape[2]
-        cdef int nwav = obs.shape[3]
-        cdef int nwav1= self.Me[0].get_number_of_wavelength()
-        cdef int nDat = nwav*4
+        cdef long ny = m.shape[0]
+        cdef long nx = m.shape[1]
+        cdef long npar = m.shape[2]
+        cdef long nwav = obs.shape[3]
+        cdef long nwav1= self.Me[0].get_number_of_wavelength()
+        cdef long nDat = nwav*4
         
         #
         # Init output arrays 
@@ -554,22 +671,23 @@ cdef class pyMilne_float:
             
         return res
 
-    def invert_spatially_regularized(self, ar[float,ndim=3] m, ar[float,ndim=4] obs, ar[float,ndim=2] sig, ar[float,ndim=1] alphas, float mu = 1.0,  int nIter = 20, float chi2_thres = 1.0,  int method = 0, float iLam = 10, int delay_bracket = 2):
+    def invert_spatially_regularized(self, ar[float,ndim=4] m, ar[float,ndim=5] obs, ar[float,ndim=2] sig, ar[float,ndim=1] alphas, ar[float,ndim=1] alphas_time, ar[float,ndim=1] betas, float mu = 1.0,  int nIter = 20, float chi2_thres = 1.0,  int method = 0, float iLam = 10, int delay_bracket = 2):
 
         #
         # Dimensions
         #
-        cdef int ny = m.shape[0]
-        cdef int nx = m.shape[1]
-        cdef int npar = m.shape[2]
-        cdef int nwav = obs.shape[3]
-        cdef int nwav1= self.Me[0].get_number_of_wavelength()
-        cdef int nDat = nwav*4
+        cdef long nt = m.shape[0]
+        cdef long ny = m.shape[1]
+        cdef long nx = m.shape[2]
+        cdef long npar = m.shape[3]
+        cdef long nwav = obs.shape[4]
+        cdef long nwav1= self.Me[0].get_number_of_wavelength()
+        cdef long nDat = nwav*4
         
         #
         # Init output arrays 
         #
-        cdef ar[float,ndim=4] syn  = zeros((ny,nx,4,nwav), dtype='float32', order='c')
+        cdef ar[float,ndim=5] syn  = zeros((nt,ny,nx,4,nwav), dtype='float32', order='c')
         cdef float chi2 = 1.e32
         
         
@@ -584,10 +702,12 @@ cdef class pyMilne_float:
         #
         # invert pixels
         #                                                              
-        chi2 = invert_spatially_regularized_float(ny, nx, nDat, self.Me,  <float*>m.data, <float*>obs.data, <float*>syn.data, <float*>sig.data, <int>method, <int>nIter, <float>chi2_thres, <float>mu, <float>iLam,  <float*>alphas.data, <int>delay_bracket)
+        chi2 = invert_spatially_regularized_float(nt, ny, nx, nDat, self.Me,  <float*>m.data, <float*>obs.data, <float*>syn.data, <float*>sig.data, <int>method, <int>nIter, <float>chi2_thres, <float>mu, <float>iLam,  <float*>alphas.data, <float*>alphas_time.data, <float*>betas.data, <int>delay_bracket)
                                                                         
         
         return m, syn, chi2                                                                        
 
     def get_dtype(self):
         return self.dtype
+
+

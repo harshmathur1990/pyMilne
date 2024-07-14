@@ -27,6 +27,7 @@
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 #include <unsupported/Eigen/CXX11/Tensor>
+#include <unsupported/Eigen/IterativeSolvers>
 
 namespace spa{
 
@@ -35,18 +36,17 @@ namespace spa{
   template<typename T, typename iType = long>
   class lms{
   protected:
-    iType npar, ny, nx;
+    iType npar, nt, ny, nx;
     
     Eigen::SparseMatrix<T, Eigen::RowMajor, iType> A;
-    
     Eigen::Matrix<T,Eigen::Dynamic, 1> B;
     
     Eigen::SparseMatrix<T,Eigen::RowMajor, iType> L;
     Eigen::SparseMatrix<T,Eigen::RowMajor, iType> LL;
     
   public:
-    lms(int const inpar, int const iny, int const inx):
-      npar(inpar), ny(iny), nx(inx),  A(), B(){};
+    lms(long const inpar, long const i_nt, long const iny, long const inx):
+      npar(inpar), nt(i_nt), ny(iny), nx(inx),  A(), B(){};
         
     // ------------------------------------------------------------ //
     
@@ -55,78 +55,77 @@ namespace spa{
 
     // ------------------------------------------------------------ //
 
-    inline static T get_one_JJ(int const ndat, const T* const __restrict__ Jy, const T* const __restrict__ Jx)
+    inline static T get_one_JJ(long const ndat, const T* const __restrict__ Jy, const T* const __restrict__ Jx)
     {
-      return static_cast<T>(ksumMult<T,double>(ndat, Jy, Jx));
+      return static_cast<T>(ksumMult<T,long double>(ndat, Jy, Jx));
     }
     
     // ------------------------------------------------------------ //
 
-    void construct_system(int const npar, container<T> const& cont, T* const __restrict__ m, 
+    void construct_system(long const npar, container<T> const& cont, T* const __restrict__ m, 
 			  T* const __restrict__ r,  Eigen::Matrix<T,Eigen::Dynamic,1> const& Reg_RHS)
     {
 
+      
       iType const npix = cont.ny*cont.nx;
       iType const ndat = cont.nDat;
       iType const nthreads = cont.getNthreads();
-      iType const nx = cont.nx;
-      iType const ny = cont.ny;
-      iType const Jstride = npar*ndat;
+      iType const nTot = nt*npix;
 
       
       // --- Build Sparse system --- //
 
-      B.resize(npix*npar); B.setZero();
-      A.resize(0,0); A.data().squeeze(); A.resize(npix*npar, npix*npar);
-      A.reserve(Eigen::VectorXi::Constant(npix*npar,npar));
+      B.resize(nTot*npar); B.setZero();
+      A.resize(0,0); A.data().squeeze(); A.resize(nTot*npar, nTot*npar);
+      A.reserve(Eigen::VectorXi::Constant(nTot*npar,npar));
 
       
-      T* __restrict__ iJ = NULL;
-      iType ipix=0, tid=0, pp=0, ii=0, jj=0;
-      T iSum = 0;
+      iType tid=0;
 
       // --- parallel block --- //
       
-#pragma omp parallel default(shared) firstprivate(ipix, tid, iSum, pp, ii, jj, iJ) num_threads(nthreads)      
+#pragma omp parallel default(shared) firstprivate( tid) num_threads(nthreads)      
       {
 	
 	tid = omp_get_thread_num();
-	iJ = new T [npar*ndat](); // Allocate thread buffer for derivatives
+	T* const __restrict__ iJ = new T [npar*ndat](); // Allocate thread buffer for derivatives
 	
-#pragma omp for
-	for(ipix=0; ipix<npix; ++ipix){
-
+#pragma omp for 
+	for(iType tpix=0; tpix<nTot;++tpix){
+	  
+	  iType const Elem = tpix*npar;
+	  
 	  // --- synthesize_one pixel with derivatives --- //
 	  
-	  cont.synthesize_der_one(npar, &m[ipix*npar], &r[ipix*ndat], iJ, tid, ipix);
-
-
-	  // --- Fill in subspace in sparse Hessian matrix --- //
-
-	  for(jj=0; jj<npar; ++jj){
-
-	    // --- RHS of the equation --- //
-	    
-	    B[ipix*npar+jj] = ksumMult<T,double>(ndat, &iJ[jj*ndat], &r[ipix*ndat]) - Reg_RHS[ipix*npar+jj];
-	    
-	    for(ii=0; ii<=jj;++ii){
-
-	      // --- Matrix subspaces --- //
-	      
-	      iSum = get_one_JJ(ndat, &iJ[jj*ndat], &iJ[ii*ndat]);
-	      A.insert(ipix*npar + jj, ipix*npar + ii) = iSum;
-	      
-	      if(ii != jj) // The matrix is symmetric but avoid inserting the diagonal term twice
-	       	A.insert(ipix*npar + ii, ipix*npar + jj) = iSum;
-	      
-	    } // ii
-	  } // jj
+	  cont.synthesize_der_one(npar, &m[Elem], &r[tpix*ndat], iJ, tid, tpix);
 	  
 	  
-	} // ipix
+	    
+	    // --- Fill in subspace in sparse Hessian matrix --- //
+	    
+	    for(iType jj=0; jj<npar; ++jj){
+	      
+
+	      // --- RHS of the equation --- //
+	      
+	      B[Elem+jj] = ksumMult<T,long double>(ndat, &iJ[jj*ndat], &r[tpix*ndat]) - Reg_RHS[Elem+jj];
+
+	      
+	      for(iType ii=0; ii<npar;++ii){
+		
+		// --- Matrix subspaces --- //
+		
+		T const iSum = get_one_JJ(ndat, &iJ[jj*ndat], &iJ[ii*ndat]);
+		A.insert(Elem + jj, Elem + ii) = iSum;
+		
+		//if(ii != jj) // The matrix is symmetric but avoid inserting the diagonal term twice in the diagonal
+		// A.insert(Elem + ii, Elem + jj) = iSum;
+		
+	      } // ii
+	    } // jj    
+	} // itime
 	
 	delete [] iJ;
-	iJ = NULL;
 	
       }// parallel
       
@@ -135,57 +134,106 @@ namespace spa{
 
     // ------------------------------------------------------------ //
 
+    void getInitialSolution(iType const nDiag, T const iLam, Eigen::SparseMatrix<T,Eigen::RowMajor,iType> &Atot,
+			    Eigen::Matrix<T,Eigen::Dynamic,1> &dx)const
+    {
+
+      // --- store diagonal --- //
+
+      Eigen::Matrix<T,Eigen::Dynamic,1> Diagonal = Atot.diagonal();
+
+      
+      // --- damp diagonal with a large value and get correction --- //
+      
+      T one_ilam = T(1);
+      
+      if(iLam >= T(10))    one_ilam +=  iLam*2;
+      else if(iLam > T(1)) one_ilam +=  T(10) + iLam;
+      else                 one_ilam +=  T(1)  + iLam;
+      
+      for(iType kk =0; kk<nDiag; ++kk)
+	Atot.coeffRef(kk,kk) *= one_ilam;
+
+      Eigen::BiCGSTAB<Eigen::SparseMatrix<T,Eigen::RowMajor,iType>> solver(Atot);
+      dx = solver.solve(B);
+
+      
+      // --- Restore diagonal --- //
+      
+      Atot.diagonal() = Diagonal;
+      
+    }
+
+    // ------------------------------------------------------------ //
+
     Chi2<T> getCorrection(container<T> const& cont, T* const __restrict__ m,
-			  T* const __restrict__ syn, T* const __restrict__ r, T iLam, int const method)const 
+			  T* const __restrict__ syn, T* const __restrict__ r, T const iLam, int const method)const 
     {
 
 
       iType const npix = cont.ny*cont.nx;
+      iType const nt   = cont.nt;
       iType const ndat = cont.nDat;
-
+      iType const nTot = nt*npix;
+      iType const nDiag = iType(npar)*nTot;
+      
       Eigen::SparseMatrix<T,Eigen::RowMajor,iType> Atot = A+LL;
+      Eigen::Matrix<T,Eigen::Dynamic,1> dx;
 
+	
+
+      // --- get initial solution with a large value of lambda --- //
+
+      if(method != 2){
+	getInitialSolution(nDiag, iLam, Atot, dx);
+      }
+      
       
       // --- damp diagonal and get correction --- //
       
-      iType const nDiag = iType(npar)*iType(npix);
+      T const one_ilam = 1.0 + iLam;
       for(iType kk =0; kk<nDiag; ++kk)
-	Atot.coeffRef(kk,kk) *= (1+iLam);
+	Atot.coeffRef(kk,kk) *= one_ilam;
 
-      Eigen::Matrix<T,Eigen::Dynamic,1> dx;
       
       // --- Solve for corrections --- //
       
       if(method == 0){
-	Eigen::ConjugateGradient<Eigen::SparseMatrix<T,Eigen::RowMajor,iType>, Eigen::Lower| Eigen::Upper> solver(Atot);
-	dx = solver.solve(B);
+      	Eigen::ConjugateGradient<Eigen::SparseMatrix<T,Eigen::RowMajor,iType>, Eigen::Lower| Eigen::Upper> solver(Atot);
+      	dx = solver.solveWithGuess(B, dx);
       }else if(method == 1){
 	Eigen::BiCGSTAB<Eigen::SparseMatrix<T,Eigen::RowMajor,iType>> solver(Atot);
-	dx = solver.solve(B);
+	dx = solver.solveWithGuess(B, dx);
       }else if(method == 2){
 	Eigen::SparseLU<Eigen::SparseMatrix<T,Eigen::RowMajor,iType>> solver(Atot);
 	dx = solver.solve(B);
+      }else{
+	Eigen::GMRES<Eigen::SparseMatrix<T,Eigen::RowMajor,iType>> solver(Atot);
+	dx = solver.solveWithGuess(B, dx);
       }
+   
 
       
       // --- Check corrections --- //
       
-      for(iType pp=0; pp<npar; ++pp)
-	for(iType ipix = 0; ipix<npix; ++ipix){
-	  m[ipix*npar+pp] += dx[ipix*npar+pp];
-	  cont.Pinfo[pp].CheckNormalized(m[ipix*npar+pp]);
-	  
-	}
+      for(iType tpix=0; tpix<nTot; ++tpix){
+	for(iType pp=0; pp<npar; ++pp){
+	  m[tpix*npar+pp] += dx[tpix*npar+pp];
+	  cont.Pinfo[pp].CheckNormalized(m[tpix*npar+pp]);
+	} // pp
+      } // tpix
 
+	
+
+	
       // --- compute chi2 --- //
-
-      
-      std::vector<T> rnew(ndat*npix,0);
+	
+      std::vector<T> rnew(nt*ndat*npix,0);
       cont.fx(npar, m, syn, &rnew[0]);
       Eigen::Matrix<T, Eigen::Dynamic, 1> Gam = cont.getGamma(npar, m);
       
-      Chi2<T> chi2(ksum2<T,double>(npix*ndat, &rnew[0]), ksum2<T,double>(Gam.size(), &Gam[0]));
-      
+      Chi2<T> chi2(ksum2<T,long double>(nt*npix*ndat, &rnew[0]), ksum2<T,long double>(Gam.size(), &Gam[0]));
+
       return chi2;
     }
     
@@ -205,13 +253,14 @@ namespace spa{
 
 	// --- Bracketing optimal lambda value --- //
 	
-	int const npix = cont.nx*cont.ny;
+	iType const npix = cont.nx*cont.ny;
+	iType const nt = cont.nt;
 	std::vector<Chi2<T>> iChi2;
 	std::vector<T> Lambdas;
 
 	int idx = 0;
 
-	Eigen::Map<Eigen::Matrix<T,Eigen::Dynamic,1>> input_model(m, npix*npar);
+	Eigen::Map<Eigen::Matrix<T,Eigen::Dynamic,1>> input_model(m, npix*npar*nt);
 	Eigen::Matrix<T,Eigen::Dynamic,1> Model = input_model;
 
 	Chi2<T> chi2 = getCorrection(cont, &Model[0], syn, r, iLam, method);
@@ -261,7 +310,7 @@ namespace spa{
 	    
 	  }// while
 	}
-	
+
 	input_model = bestModel;
 	iLam = Lambdas[idx];
 	return iChi2[idx];
@@ -273,16 +322,16 @@ namespace spa{
 
     T fitData(container<T> const& cont, int const npar, T* __restrict__ bestModel,
 	      T* __restrict__ bestSyn, int const max_iter = 20, T iLam = 10,
-	      T const Chi2_thres = 1.0, T const fx_thres = 2.e-3, int const delay_braket = 2,
+	      T const Chi2_thres = 1.0, T const fx_thres = 1.e-3, int delay_braket = 2,
 	      bool verbose = true, int const method = 0)
     {
       int const nthreads = int(cont.Me.size());
       Eigen::initParallel();
       Eigen::setNbThreads(nthreads);
 
-      static constexpr T const facLam = 3.1622776601683795;
-      static constexpr T const maxLam = 1000.;
-      static constexpr T const minLam =  3.1622776601683795e-3;
+      static constexpr T const facLam = 2.75;
+      static constexpr T const maxLam = 1E4;
+      static constexpr T const minLam =  1e-4;
       static constexpr int const max_n_reject = 6;
 
       
@@ -291,15 +340,18 @@ namespace spa{
       Chi2<T> bestChi2(1.e34,1.e34); 
       Chi2<T> chi2 = bestChi2;
       
-      iType const npix = cont.ny*cont.nx;
+      iType const npix = cont.nt*cont.ny*cont.nx;
       iType const ndat = cont.nDat;
-      iType const nJ = long(npix)*long(npar)*long(ndat);
+       
+      //iType const nJ = long(npix)*long(npar)*long(ndat);
 
       
       T* const __restrict__ r   = new T [npix*ndat]();
       T* const __restrict__ m   = new T [npix*npar]();
       
 
+      std::vector<T> lambdas(max_iter, T(0));
+      
       
       // --- check pars --- //
 
@@ -328,7 +380,7 @@ namespace spa{
       // --- Init total Chi2 --- //
       {
 	Eigen::Matrix<T, Eigen::Dynamic, 1> Gam = cont.getGamma(npar, m);
-	bestChi2 = Chi2<T>(ksum2<T,double>(npix*ndat, r), ksum2<T,double>(Gam.size(), &Gam[0]));
+	bestChi2 = Chi2<T>(ksum2<T,long double>(npix*ndat, r), ksum2<T,long double>(Gam.size(), &Gam[0]));
 	Reg_RHS = L.transpose()*Gam; // Init RHS regularization term. Vector that only needs to be computed once per successfull iteration.
       }
 
@@ -381,16 +433,29 @@ namespace spa{
 	  bestChi2 = chi2;
 
 	  std::memcpy(bestModel,   m, npar*npix*sizeof(T));
-
+	  lambdas[iter] = iLam;
 
 	  if(!do_bracket)
 	    if(iLam*1.00001 > minLam)
 	      iLam = checkLambda(iLam/facLam, minLam, maxLam);
 	    else
 	      iLam *= facLam*facLam;
-	  else
-	    iLam = facLam*iLam;
-	    	    
+	  else{
+	    if(iter > 2){
+	      int repeated = 0;
+	      for(int ii=iter-2; ii<=iter; ++ii)
+		if(lambdas[ii] == minLam) repeated += 1;
+
+	      if(repeated == 3){
+		iLam = 1;
+		lambdas[iter] = 1;
+	      }
+	      else
+		iLam = facLam*facLam*facLam*iLam;
+	    }else{
+	      iLam = facLam*facLam*iLam;
+	    }
+	  }	    
 	  if(dfx < fx_thres){
 	    if(tooSmall) quit = true;
 	    else tooSmall = true;
@@ -402,7 +467,8 @@ namespace spa{
 	  iLam = checkLambda(iLam*SQ<T>(facLam), minLam, maxLam);
 	  n_rejected += 1;
 	  if(verbose)
-	    fprintf(stderr,"lms::fitData: ----> Chi2=%s > %s -> Increasing lambda %f -> %f\n",  chi2.formatted().c_str(), bestChi2.formatted().c_str(), oLam, iLam);
+	    fprintf(stderr,"lms::fitData: ----> Chi2=%s > %s -> Increasing lambda %f -> %f\n",
+		    chi2.formatted().c_str(), bestChi2.formatted().c_str(), oLam, iLam);
 	  
 	  if(n_rejected<max_n_reject) continue;
 	  
@@ -445,11 +511,8 @@ namespace spa{
 	// --- init next iteration --- //
 	
 	std::memcpy(m, bestModel, npix*npar*sizeof(T));
+	Reg_RHS = L.transpose()*cont.getGamma(npar, m);
 	
-	{
-	  Eigen::Matrix<T, Eigen::Dynamic, 1> Gam = cont.getGamma(npar, m);
-	  Reg_RHS = L.transpose()*Gam;
-	}
 
 
 	// --- Construct sparse matrix with the new model estimate --- //

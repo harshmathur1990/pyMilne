@@ -16,18 +16,18 @@ namespace wr{
   
   template<typename T>
   void SynMany(std::vector<ml::Milne<T>> const& ME,  T* __restrict__ m,
-	       T* __restrict__ stokes_in, int const ny, int const nx, T const mu)
+	       T* __restrict__ stokes_in, long const ny, long const nx, T const mu)
   {
     
     // --- Number of threads and pixels --- //
     
-    int const nthreads = int(ME.size());
-    int const nPix     = nx*ny;
-    int const sStride  = 4*ME[0].get_number_of_wavelength();
+    long const nthreads = int(ME.size());
+    long const nPix     = nx*ny;
+    long const sStride  = 4*ME[0].get_number_of_wavelength();
     
     // --- Parallel loop --- //
     
-    int ipix = 0, tid = 0;
+    long ipix = 0, tid = 0;
 #pragma omp parallel default(shared) firstprivate(ipix, tid) num_threads(nthreads)  
     {
       tid = omp_get_thread_num();
@@ -46,19 +46,19 @@ namespace wr{
   // ********************************************************************* //
   template<typename T>
   void SynManyRF(std::vector<ml::Milne<T>> const& ME,  T* __restrict__ m,
-		 T* __restrict__ stokes_in, T* __restrict__ rf_in, int const ny, int const nx, T const mu)
+		 T* __restrict__ stokes_in, T* __restrict__ rf_in, long const ny, long const nx, T const mu)
   {
     
     // --- Number of threads and pixels --- //
     
-    int const nthreads = int(ME.size());
-    int const nPix     = nx*ny;
-    int const sStride  = 4*ME[0].get_number_of_wavelength();
-    int const rfStride = sStride*9;
+    long const nthreads = int(ME.size());
+    long const nPix     = nx*ny;
+    long const sStride  = 4*ME[0].get_number_of_wavelength();
+    long const rfStride = sStride*9;
     
     // --- Parallel loop --- //
     
-    int ipix = 0, tid = 0;
+    long ipix = 0, tid = 0;
 #pragma omp parallel default(shared) firstprivate(ipix, tid) num_threads(nthreads)  
     {
       tid = omp_get_thread_num();
@@ -75,7 +75,7 @@ namespace wr{
   // ********************************************************************* //
 
   template<typename T> T fitOne(ml::Milne<T> const& ME,  lm::LevMar<T> const& fit, T* __restrict__ m,
-				T* __restrict__ syn, const T* __restrict__ obs, const T* __restrict__ sig, int const nDat,
+				T* __restrict__ syn, const T* __restrict__ obs, const T* __restrict__ sig, long const nDat,
 			        int const nRandom, int const niter, T const chi2_thres, T const mu, bool verbose)
   {
 
@@ -142,7 +142,7 @@ namespace wr{
   template<typename T>
   void InvertMany(std::vector<ml::Milne<T>> const& ME,  T* __restrict__ m,
 		  T* __restrict__ stokes_in, const T* __restrict__ obs, const T* __restrict__ sig,
-		  T* __restrict__ bestChi2, int const ny, int const nx, int nDat, int const nRandom,
+		  T* __restrict__ bestChi2, long const ny, long const nx, long nDat, int const nRandom,
 		  int const niter, T const chi2_thres, T const mu, bool  verbose)
   {
 
@@ -169,33 +169,33 @@ namespace wr{
 
     // --- loop? --- //
 
-    int const nPix     = nx*ny;
-    int const sStride  = 4*ME[0].get_number_of_wavelength();
-    int const rfStride = sStride*9;
+    long const nPix     = nx*ny;
+    long const sStride  = 4*ME[0].get_number_of_wavelength();
+    //long const rfStride = sStride*9;
 
 
     
     // --- Parallel loop --- //
     
         
-    int ipix = 0, tid = 0, oper = -1, per = 0;
-#pragma omp parallel default(shared) firstprivate(ipix, tid) num_threads(nthreads)  
+    long oper = -1, per = 0;
+#pragma omp parallel default(shared) num_threads(nthreads)  
     {
-      tid = omp_get_thread_num();
+      long const tid = omp_get_thread_num();
 
       //
 
-#pragma omp for schedule(dynamic,2)
-      for(ipix = 0; ipix<nPix; ++ipix){
+#pragma omp for schedule(dynamic,1)
+      for(long ipix = 0; ipix<nPix; ++ipix){
 	ME[tid].checkParameters(&m[ipix*9]);	
 	bestChi2[ipix] = fitOne<T>(ME[tid], fit[tid], &m[9*ipix], &stokes_in[sStride*ipix],
 				   &obs[sStride*ipix], sig, nDat, nRandom, niter, chi2_thres, mu, verbose);
 
 	if(tid == 0){
-	  per = (ipix*100)/std::max<int>(nPix-1, 1);
+	  per = int((ipix*100.0)/std::max<double>(nPix-1.0, 1.0)+0.5);
 	  if(oper < per){
 	    oper = per;
-	    fprintf(stderr,"\rInvertMany: Processed -> %3d%s", per,"%");
+	    fprintf(stderr,"\rInvertMany: Processed -> %3ld%s", per,"%");
 	  }
 	}
       }
@@ -206,13 +206,16 @@ namespace wr{
   }
 
   // ********************************************************************* //
-
+  
   template<typename T>
-  T invert_spatially_regularized(int const ny, int const nx, int const ndat,
+  T invert_spatially_regularized(long const nt, long const ny, long const nx, long const ndat,
 				 std::vector<ml::Milne<T>> const& ME,  T* __restrict__ m,
 				 T* __restrict__ obs, T* __restrict__ syn, T* __restrict__ sig, int const method,
 				 int const nIter, T const chi2_thres, T const mu, T const iLam,
-				 const T* const __restrict__ alphas, int const delay_bracket)
+				 const T* const __restrict__ alphas,
+				 const T* const __restrict__ alphas_time,
+				 const T* const __restrict__ betas, 
+				 int const delay_bracket)
   {
 
     // --- Init parameters info array --- //
@@ -220,23 +223,23 @@ namespace wr{
     std::vector<spa::Par<T>> Pinfo;
     for(int ii=0; ii<9;++ii)
       Pinfo.emplace_back(spa::Par<T>(((ii == 2)? true: false), true, ml::pscl<T>[ii],
-				     ml::pmin<T>[ii], ml::pmax<T>[ii], alphas[ii]));
+				     ml::pmin<T>[ii], ml::pmax<T>[ii], alphas[ii], alphas_time[ii], betas[ii]));
   
     
     // --- init container --- //
     
-    spa::container<T> cont(ny, nx, mu, ndat, obs, sig, Pinfo, ME);
+    spa::container<T> cont(nt, ny, nx, mu, ndat, obs, sig, Pinfo, ME);
     
 
     
     // --- Init inverter class --- //
     
-    spa::lms<T> fitter(9, ny, nx);
+    spa::lms<T,long> fitter(9, nt, ny, nx);
 
 
     // --- Fit data --- //
     
-    return fitter.fitData(cont,  9, m, syn, nIter, iLam, chi2_thres,  2.e-3,  delay_bracket,  true);
+    return fitter.fitData(cont, 9, m, syn, nIter, iLam, chi2_thres,  2.e-3,  delay_bracket,  true, method);
   }
   
   
