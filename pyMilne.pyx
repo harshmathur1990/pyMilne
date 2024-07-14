@@ -98,6 +98,8 @@ cdef class pyLines:
             self.j1 = 1.0; self.j2 = 0.0; self.g1 = 2.49; self.g2 = 0.0; self.w0 = 6302.4931; self.gf  = 10.0**-0.968; self.dw = 20
         elif(label == 6173):
             self.j1 = 1.0; self.j2 = 0.0; self.g1 = 2.50; self.g2 = 0.0; self.w0 = 6173.3340; self.gf  = 10.0**-2.880; self.dw = 20
+        elif(label == 6569):
+            self.j1 = 3.0; self.j2 = 4.0; self.g1 = 1.33; self.g2 = 1.35; self.w0 = 6569.2138; self.gf  = 10.0**-0.45; self.dw = 20
         else:
             print("pyLines::setLine: Error line with label {0 } is not implented".format(label))
 
@@ -154,6 +156,8 @@ cdef class pyLinesf:
             self.j1 = 1.0; self.j2 = 0.0; self.g1 = 2.49; self.g2 = 0.0; self.w0 = 6302.4931; self.gf  = 10.0**-0.968; self.dw = 20
         elif(label == 6173):
             self.j1 = 1.0; self.j2 = 0.0; self.g1 = 2.50; self.g2 = 0.0; self.w0 = 6173.3340; self.gf  = 10.0**-2.880; self.dw = 20
+        elif(label == 6569):
+            self.j1 = 3.0; self.j2 = 4.0; self.g1 = 1.33; self.g2 = 1.35; self.w0 = 6569.2138; self.gf  = 10.0**-0.45; self.dw = 20
         else:
             print("pyLinesf::setLine: Error line with label {0 } is not implented".format(label))
 

@@ -169,9 +169,9 @@ if __name__ == "__main__":
     extent = np.float32((0, nx, 0, ny))*0.059
     for ii in range(9):
         if(ii != 3):
-            a = ax1[ii].imshow(im.histo_opt(mo[:,:,ii]), cmap=cmaps[ii], interpolation='nearest', extent=extent, aspect='equal')
+            a = ax1[ii].imshow(im.histo_opt(mo[:,:,ii]), cmap=cmaps[ii], interpolation='nearest', extent=extent, aspect='equal', origin='lower')
         else:
-            a = ax1[ii].imshow(mo[:,:,ii], cmap=cmaps[ii], interpolation='nearest', extent=extent, vmax=4, vmin=-4, aspect='equal')
+            a = ax1[ii].imshow(mo[:,:,ii], cmap=cmaps[ii], interpolation='nearest', extent=extent, vmax=4, vmin=-4, aspect='equal',)
         f.colorbar(a, ax=ax1[ii], orientation='vertical',label=labels[ii])
 
         

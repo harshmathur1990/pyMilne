@@ -25,6 +25,8 @@ class MilneEddington:
                 return pyMilne.pyLines(j1 = 1.0, j2 = 0.0, g1 = 2.49, g2 = 0.00, cw = 6302.4931, gf = 10.**-0.968, anomalous = anomalous, dw = dw)
             elif(label == 6173):
                 return pyMilne.pyLines(j1 = 1.0, j2 = 0.0, g1 = 2.50, g2 = 0.00, cw = 6173.3340, gf = 10.**-2.880, anomalous = anomalous, dw = dw)
+            elif (label == 6569):
+                return pyMilne.pyLines(j1 = 3.0 , j2 = 4.0, g1 = 1.33, g2 = 1.35, cw = 6569.2138, gf = 10.**-0.45, anomalous = anomalous, dw = dw)
             else:
                 print("pyLines::setLine: Error line with label {0 } is not implented".format(label))
                 return pyMilne.pyLines()
@@ -35,6 +37,8 @@ class MilneEddington:
                 return pyMilne.pyLinesf(j1 = 1.0, j2 = 0.0, g1 = 2.49, g2 = 0.00, cw = 6302.4931, gf = 10.**-0.968, anomalous = anomalous, dw = dw)
             elif(label == 6173):
                 return pyMilne.pyLinesf(j1 = 1.0, j2 = 0.0, g1 = 2.50, g2 = 0.00, cw = 6173.3340, gf = 10.**-2.880, anomalous = anomalous, dw = dw)
+            elif (label == 6569):
+                return pyMilne.pyLinesf(j1 = 3.0, j2 = 4.0, g1 = 1.33, g2 = 1.35, cw = 6569.2138, gf = 10.**-0.45, anomalous = anomalous, dw = dw)
             else:
                 print("pyLines::setLine: Error line with label {0 } is not implented".format(label))
                 return pyMilne.pyLinesf()
